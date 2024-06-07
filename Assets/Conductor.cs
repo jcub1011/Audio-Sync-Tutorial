@@ -9,7 +9,7 @@ namespace TimeKeeping
     {
         #region Static
         static double _smoothedTime = 0;
-        public static float ReportedTime { get; private set; }
+        public static float UnSmoothedTime { get; private set; }
         public static float SmoothedTime { get; private set; }
         public static float AudioLatency { get; set; }
         public static Conductor Instance { get; private set; }
@@ -36,7 +36,7 @@ namespace TimeKeeping
             if (_source == null || _source.clip == null)
             {
                 _smoothedTime = 0;
-                ReportedTime = 0;
+                UnSmoothedTime = 0;
                 return;
             }
 
@@ -65,17 +65,17 @@ namespace TimeKeeping
                     $"{real - (_sw.Elapsed.TotalSeconds - _swStartTime):0.000}");
             }
 
-            ReportedTime = _source.time - AudioLatency;
+            UnSmoothedTime = _source.time - AudioLatency;
             SmoothedTime = (float)_smoothedTime - AudioLatency;
 
 
-            double difference = _sw.Elapsed.TotalSeconds - _swStartTime - ReportedTime;
+            double difference = _sw.Elapsed.TotalSeconds - _swStartTime - UnSmoothedTime;
             if (Math.Abs(difference) > 0.200)
             {
                 _swStartTime += difference;
             }
 
-            if (ReportedTime > 50 && !_csvGenerator.Exported)
+            if (UnSmoothedTime > 50 && !_csvGenerator.Exported)
             {
                 _csvGenerator.Export(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "audio_sync_log");
             }
