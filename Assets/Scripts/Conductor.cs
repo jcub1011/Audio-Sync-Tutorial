@@ -42,7 +42,7 @@ namespace TimeKeeping
 
             // Interpolations must run every frame, even if they are being
             // synced this frame.
-            InterpolateSmoothedTime();
+            InterpolateSmoothedTime(ref _smoothedTime, ref _variance);
 
             // Sync only when the play head has updated.
             // We ignore 0 because if the song reaches the end, it will
@@ -55,7 +55,6 @@ namespace TimeKeeping
                 double real = (double)_source.timeSamples / _source.clip.frequency;
                 _lastSamplePosition = _source.timeSamples;
 
-                SyncSmoothedTime(real);
                 _csvGenerator.AppendRow(
                     $"{_sw.Elapsed.TotalSeconds:0.000}",
                     $"{real:0.000}", 
@@ -63,11 +62,12 @@ namespace TimeKeeping
                     $"{_sw.Elapsed.TotalSeconds:0.000}",
                     $"{real - _smoothedTime:0.000}",
                     $"{real - (_sw.Elapsed.TotalSeconds - _swStartTime):0.000}");
+
+                SyncSmoothedTime(real, ref _smoothedTime, out _variance);
             }
 
             UnSmoothedTime = _source.time - AudioLatency;
-            SmoothedTime = (float)_smoothedTime - AudioLatency;
-
+            SmoothedTime = Mathf.Clamp((float)_smoothedTime - AudioLatency, -AudioLatency, _source.clip.length);
 
             double difference = _sw.Elapsed.TotalSeconds - _swStartTime - UnSmoothedTime;
             if (Math.Abs(difference) > 0.200)
@@ -84,46 +84,50 @@ namespace TimeKeeping
         /// <summary>
         /// Interpolates the smooth time while reducing jitter.
         /// </summary>
-        void InterpolateSmoothedTime()
+        /// <param name="smoothedTime">The smoothed time.</param>
+        /// <param name="variance">The variance from the reported time of the audio source.</param>
+        void InterpolateSmoothedTime(ref double smoothedTime, ref double variance)
         {
-            const float CLOSE_DRIFT_SPEED = 0.1f; // 100ms of correction per second.
-            const float FAR_DRIFT_SPEED = 0.2f; // 200ms of correction per second.
-            _smoothedTime += Time.deltaTime;
+            const float CLOSE_DRIFT_SPEED = 0.05f; // 50ms of correction per second.
+            const float FAR_DRIFT_SPEED = 0.01f; // 100ms of correction per second.
+            smoothedTime += Time.deltaTime;
 
             float correction = 0;
-            if (_variance > 0)
+            if (variance > 0)
             {
-                if (_variance < 0.01)
+                if (variance < 0.01)
                     correction = Time.deltaTime * CLOSE_DRIFT_SPEED;
                 else
                     correction = Time.deltaTime * FAR_DRIFT_SPEED;
             }
-            else if (_variance < 0)
+            else if (variance < 0)
             {
-                if (_variance > -0.01)
+                if (variance > -0.01)
                     correction = -Time.deltaTime * CLOSE_DRIFT_SPEED;
                 else
                     correction = -Time.deltaTime * FAR_DRIFT_SPEED;
             }
 
-            _variance -= correction;
-            _smoothedTime += correction;
+            variance -= correction;
+            smoothedTime += correction;
         }
 
         /// <summary>
         /// Brings smooth time back in sync without backtracking.
         /// </summary>
         /// <param name="realTime"></param>
-        void SyncSmoothedTime(double realTime)
+        /// <param name="smoothedTime">The current smoothed time.</param>
+        /// <param name="variance">The variance fromt he real time.</param>
+        void SyncSmoothedTime(double realTime, ref double smoothedTime, out double variance)
         {
-            _variance = realTime - _smoothedTime;
+            variance = realTime - smoothedTime;
 
             // Variance greater than 30 ms is very bad.
             // We just take the L and create jitter.
-            if (Math.Abs(_variance) > 0.03)
+            if (Math.Abs(variance) > 0.03)
             {
-                _smoothedTime = realTime;
-                _variance = 0;
+                smoothedTime = realTime;
+                variance = 0;
             }
         }
     }
